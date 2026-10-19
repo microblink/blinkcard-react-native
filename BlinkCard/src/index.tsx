@@ -111,7 +111,7 @@ export async function performScan(
  *
  * @returns BlinkCardScanningResult | undefined
  */
-export async function perfromDirectApiScan(
+export async function performDirectApiScan(
   blinkCardSdkSettings: BlinkCardSdkSettings,
   blinkCardSessionSettings: BlinkCardSessionSettings,
   firstSideImage: string,

@@ -1,3 +1,55 @@
+## 3001.0.0
+
+Version 3001.0.0 of the BlinkCard React Native SDK.
+
+- Updated to [Android SDK v3001.0.0](https://github.com/microblink/blinkcard-android/releases/tag/v3001.0.0) and [iOS SDK v3001.0.0](https://github.com/microblink/blinkcard-ios/releases/tag/v3001.0.0)
+
+## Breaking changes
+
+- **Android build requirements:** Applications integrating the plugin must compile with **compileSdk 36** and use a compatible Android Gradle Plugin (8.9.1 or newer). The plugin is built with **Kotlin 2.2.21** (Kotlin 2.1 or newer is required to compile against the native SDK).
+
+**Changes in TypeScript and API**
+
+- Renamed **detection level** settings to match the native SDK:
+    - `DetectionLevel` → `SensitivityLevel`
+    - `ScanningSettings.tiltDetectionLevel` → `tiltSensitivityLevel`
+- Renamed the **anonymization** API to **redaction**:
+    - `AnonymizationMode` → `RedactionMode`
+    - `AnonymizationSettings` → `RedactionSettings`
+    - `CardNumberAnonymizationSettings` → `CardNumberRedactionSettings`
+    - `ScanningSettings.anonymizationSettings` → `redactionSettings`
+    - Removed `cardNumberPrefixAnonymizationMode`; card-number prefix redaction follows `CardNumberRedactionSettings.mode`.
+- Renamed `CheckResult.NotPerformed` to `CheckResult.NotAvailable` (`'notAvailable'`). This affects liveness check results and `overallCardLivenessResult`.
+- **Redaction defaults:** If `ScanningSettings.redactionSettings` is **not** set, the native SDK 3001 redaction policy applies (card number and CVV redacted with four prefix and four suffix digits visible on the PAN; IBAN and cardholder name not redacted). To restore fully unredacted behavior, assign `redactionSettings` explicitly with `RedactionMode.None` on the fields you need.
+- **Step timeout:** Default `BlinkCardSessionSettings.stepTimeTimeoutInterval` changed from **15 seconds** to **60 seconds** (value is in **milliseconds**: `60000`).
+- **SDK initialization (iOS):** Resource download settings are passed via `resourcesConfiguration` / `ResourcesConfig` on the native side. Use `BlinkCardSdkSettings` fields `downloadResources`, `resourceDownloadUrl`, `resourceLocalFolder`, `bundleIdentifier`, and `resourceRequestTimeout` as before; see [blinkCardSettings.ts](BlinkCard/src/blinkCardSettings.ts).
+- **Direct API export name:** The TypeScript export `perfromDirectApiScan` was renamed to `performDirectApiScan` (documentation and native bridge already used the correct spelling). Update imports if you referenced the misspelled name.
+- **`RedactionSettings` constructor defaults:** Default property values when constructing `RedactionSettings` / `CardNumberRedactionSettings` in TypeScript now match the native session default redaction struct (PAN `fullResult` with four prefix and suffix digits visible, CVV `fullResult`, IBAN and cardholder name `none`). Omitting `ScanningSettings.redactionSettings` still uses the native SDK policy without sending a custom object.
+
+### Improvements
+
+- Added `CardAccountResult.binCheckResult` (`CheckResult`: pass, fail, or notAvailable). BIN check requires a license with the appropriate right and may be unavailable on some licenses.
+- Added `BlinkCardSessionSettings.inactivityTimeoutInterval` (milliseconds, default `10000`; set to `0` to disable). Maps to session settings on iOS and UX settings on Android.
+- **Session timeouts:** Values are forwarded to the native SDK as-is. Negative `stepTimeTimeoutInterval` does **not** disable the step timeout on either platform. Use `inactivityTimeoutInterval` `0` to disable inactivity timeout where supported (see field documentation).
+- Added `ScanningUxSettings.allowScanSound` (default `true`) to control scan success sounds.
+- `BlinkCardSdkSettings.resourceRequestTimeout` (milliseconds) is now applied on **Android** as well as iOS. When omitted, the native default applies (**30 seconds** in SDK 3001, increased from 10 seconds on Android).
+- Default resource download URL and local folder when omitted: **Android** uses `ResourcesConfig.defaultResourceDownloadUrl` and `defaultResourcesLocalFolder` from the native SDK. **iOS** has no equivalent public statics; the React Native plugin applies the same values as `ResourcesConfig` initializer defaults in the BlinkCard iOS SDK (`https://models.cdn.microblink.com/resources` and `MLModels`).
+
+### Native SDK improvements (no additional React Native API)
+
+The underlying Android and iOS SDK 3001 releases also include OCR, expiry-format, and Amex CVV fixes, updated resource-request timeout modeling, and other UX or custom-UI changes. Those behave according to the native SDK when using the default React Native scanning UI.
+
+- For details, see the [Android v3001.0.0](https://github.com/microblink/blinkcard-android/releases/tag/v3001.0.0) and [iOS v3001.0.0](https://github.com/microblink/blinkcard-ios/releases/tag/v3001.0.0) release notes.
+
+### Migration from 3000.x
+
+- Replace renamed types and properties in settings and result handling (`NotAvailable`, redaction naming, `SensitivityLevel`).
+- Replace `perfromDirectApiScan` imports with `performDirectApiScan`.
+- Review redaction: omit `redactionSettings` to use SDK defaults, or set explicit `RedactionSettings` for custom behavior.
+- Adjust expectations for step timeout (60s) and optional inactivity timeout (10s default).
+- Ensure Android apps meet compileSdk 36 and current Kotlin/AGP requirements.
+- Rebuild and reinstall the plugin package in sample or host apps after upgrading.
+
 ## 3000.0.0
 
 Version 3000.0.0 of the BlinkCard React Native SDK.

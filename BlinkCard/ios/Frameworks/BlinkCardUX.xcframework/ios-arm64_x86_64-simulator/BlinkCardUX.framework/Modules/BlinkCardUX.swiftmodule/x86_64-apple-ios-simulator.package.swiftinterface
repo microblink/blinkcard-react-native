@@ -1,10 +1,11 @@
 // swift-interface-format-version: 1.0
-// swift-compiler-version: Apple Swift version 6.2 effective-5.10 (swiftlang-6.2.0.19.9 clang-1700.3.19.1)
-// swift-module-flags: -target x86_64-apple-ios16.0-simulator -enable-objc-interop -enable-library-evolution -swift-version 5 -enforce-exclusivity=checked -O -enable-upcoming-feature ExistentialAny -enable-experimental-feature DebugDescriptionMacro -module-name BlinkCardUX -package-name blinkcard_ios
-// swift-module-flags-ignorable:  -formal-cxx-interoperability-mode=off -interface-compiler-version 6.2
-import AVFoundation
+// swift-compiler-version: Apple Swift version 6.4 effective-5.10 (swiftlang-6.4.0.34.1 clang-2100.3.34.1)
+// swift-module-flags: -target x86_64-apple-ios16.0-simulator -enable-objc-interop -enable-library-evolution -language-mode 5 -O -enable-upcoming-feature ExistentialAny -enable-experimental-feature DebugDescriptionMacro -module-name BlinkCardUX -package-name blinkcard_ios
+// swift-module-flags-ignorable:  -formal-cxx-interoperability-mode=off -interface-compiler-version 6.4
+@preconcurrency import AVFoundation
+import AudioToolbox
 import BlinkCard
-import Combine
+@preconcurrency import Combine
 import CoreImage
 import CoreVideo
 import DeveloperToolsSupport
@@ -29,7 +30,6 @@ public actor BlinkCardEventStream : BlinkCardUX.EventStream {
     get
   }
   public typealias Event = BlinkCardUX.BlinkCardUIEvent
-  @available(iOS 13.0, tvOS 13.0, watchOS 6.0, macOS 10.15, *)
   @_semantics("defaultActor") nonisolated final public var unownedExecutor: _Concurrency.UnownedSerialExecutor {
     get
   }
@@ -39,6 +39,9 @@ public actor BlinkCardAnalyzer : BlinkCardUX.CameraFrameAnalyzer {
   public typealias Result = BlinkCardUX.ScanningResult<BlinkCard.BlinkCardScanningResult, BlinkCardUX.BlinkCardScanningAlertType>
   public typealias Frame = BlinkCard.CameraFrame
   public var stepTimeoutDuration: Foundation.TimeInterval {
+    get
+  }
+  public var inactivityTimeoutDuration: Foundation.TimeInterval {
     get
   }
   public init(sdk: BlinkCard.BlinkCardSdk, blinkCardSessionSettings: BlinkCard.BlinkCardSessionSettings = BlinkCardSessionSettings(inputImageSource: .video), eventStream: BlinkCardUX.BlinkCardEventStream) async throws
@@ -51,12 +54,12 @@ public actor BlinkCardAnalyzer : BlinkCardUX.CameraFrameAnalyzer {
   public func pause()
   public func resume()
   public func restart() throws
+  public func resetStepTimer()
   public func end()
   nonisolated public var events: any BlinkCardUX.EventStream<BlinkCardUX.BlinkCardUIEvent> {
     get
   }
   @objc deinit
-  @available(iOS 13.0, tvOS 13.0, watchOS 6.0, macOS 10.15, *)
   @_semantics("defaultActor") nonisolated final public var unownedExecutor: _Concurrency.UnownedSerialExecutor {
     get
   }
@@ -77,11 +80,9 @@ public enum BlinkCardReticleState : BlinkCardUX.ReticleStateProtocol {
   public static var inactiveState: BlinkCardUX.BlinkCardReticleState {
     get
   }
-  #if compiler(>=5.3) && $NonescapableTypes
   public var text: Swift.String? {
     get
   }
-  #endif
   public var duration: Swift.Double {
     get
   }
@@ -105,16 +106,16 @@ public enum BlinkCardReticleState : BlinkCardUX.ReticleStateProtocol {
 }
 public class BlinkCardReticleStateMachine : BlinkCardUX.ReticleStateMachineProtocol {
   public typealias ReticleStateType = BlinkCardUX.BlinkCardReticleState
-  @Combine.Published @_projectedValueProperty($reticleState) public var reticleState: BlinkCardUX.BlinkCardReticleState {
+  @Combine.Published<BlinkCardUX.BlinkCardReticleState> @_projectedValueProperty($reticleState) public var reticleState: BlinkCardUX.BlinkCardReticleState {
     get
-    @available(iOS 13.0, tvOS 13.0, watchOS 6.0, macOS 10.15, *)
+    @available(macOS 10.15, iOS 13.0, tvOS 13.0, watchOS 6.0, *)
     set
-    @available(iOS 13.0, tvOS 13.0, watchOS 6.0, macOS 10.15, *)
+    @available(macOS 10.15, iOS 13.0, tvOS 13.0, watchOS 6.0, *)
     _modify
   }
   public var $reticleState: Combine.Published<BlinkCardUX.BlinkCardReticleState>.Publisher {
     get
-    @available(iOS 14.0, tvOS 14.0, watchOS 7.0, macOS 11.0, *)
+    @available(macOS 11.0, iOS 14.0, tvOS 14.0, watchOS 7.0, *)
     set
   }
   public var fallbackState: BlinkCardUX.BlinkCardReticleState
@@ -123,6 +124,8 @@ public class BlinkCardReticleStateMachine : BlinkCardUX.ReticleStateMachineProto
   public var reticleStateIsInterruptible: Swift.Bool
   public init()
   public func calculateState(using mostFrequentState: BlinkCardUX.BlinkCardReticleState) -> BlinkCardUX.BlinkCardReticleState
+  public func forcedState(state: BlinkCardUX.BlinkCardReticleStateMachine.ReticleStateType)
+  public func setInitialState()
   public typealias ObjectWillChangePublisher = Combine.ObservableObjectPublisher
   @objc deinit
 }
@@ -131,6 +134,7 @@ public enum BlinkCardScanningAlertType : Swift.Int, Swift.Sendable, BlinkCardUX.
     get
   }
   case timeout
+  case inactivityTimeout
   public var title: Swift.String {
     get
   }
@@ -143,9 +147,7 @@ public enum BlinkCardScanningAlertType : Swift.Int, Swift.Sendable, BlinkCardUX.
   public var pingletAlertType: BlinkCard.UxEventPinglet.AlertType {
     get
   }
-  #if compiler(>=5.3) && $NonescapableTypes
   public init?(rawValue: Swift.Int)
-  #endif
   public typealias ID = Swift.Int
   public typealias RawValue = Swift.Int
   public var rawValue: Swift.Int {
@@ -170,22 +172,18 @@ public enum BlinkCardUIEvent : Swift.Equatable, Swift.Sendable {
   }
 }
 @_Concurrency.MainActor final public class BlinkCardUXModel : BlinkCardUX.ScanningViewModel<BlinkCard.BlinkCardScanningResult, BlinkCardUX.BlinkCardUIEvent, BlinkCardUX.BlinkCardReticleStateMachine, BlinkCardUX.BlinkCardScanningAlertType> {
-  #if compiler(>=5.3) && $NonescapableTypes
-  @Combine.Published @_projectedValueProperty($result) @_Concurrency.MainActor final public var result: BlinkCardUX.BlinkCardResultState? {
+  @Combine.Published<BlinkCardUX.BlinkCardResultState?> @_projectedValueProperty($result) @_Concurrency.MainActor final public var result: BlinkCardUX.BlinkCardResultState? {
     get
-    @available(iOS 13.0, tvOS 13.0, watchOS 6.0, macOS 10.15, *)
+    @available(macOS 10.15, iOS 13.0, tvOS 13.0, watchOS 6.0, *)
     set
-    @available(iOS 13.0, tvOS 13.0, watchOS 6.0, macOS 10.15, *)
+    @available(macOS 10.15, iOS 13.0, tvOS 13.0, watchOS 6.0, *)
     _modify
   }
-  #endif
-  #if compiler(>=5.3) && $NonescapableTypes
   @_Concurrency.MainActor final public var $result: Combine.Published<BlinkCardUX.BlinkCardResultState?>.Publisher {
     get
-    @available(iOS 14.0, tvOS 14.0, watchOS 7.0, macOS 11.0, *)
+    @available(macOS 11.0, iOS 14.0, tvOS 14.0, watchOS 7.0, *)
     set
   }
-  #endif
   @_Concurrency.MainActor public init(analyzer: any BlinkCardUX.CameraFrameAnalyzer<BlinkCard.CameraFrame, BlinkCardUX.BlinkCardUIEvent>, uxSettings: BlinkCardUX.ScanningUXSettings = ScanningUXSettings())
   @_Concurrency.MainActor override final public func processAnalyzerResult() async
   @objc deinit
@@ -220,13 +218,23 @@ public enum BlinkCardUIEvent : Swift.Equatable, Swift.Sendable {
   final public var helpButtonTooltipForegroundColor: SwiftUICore.Color
   final public var helpButtonTooltipBackgroundColor: SwiftUICore.Color
   final public var toastBackgroundColor: SwiftUICore.Color
+  final public var localizationBundle: Foundation.Bundle? {
+    get
+    set
+  }
+  final public var localizationTableName: Swift.String? {
+    get
+    set
+  }
+  final public var language: Swift.String? {
+    get
+    set
+  }
   @objc deinit
 }
 public protocol ScanningResultProtocol : Swift.Sendable {
   associatedtype Result : Swift.Sendable
-  #if compiler(>=5.3) && $NonescapableTypes
   nonisolated var scanResult: Self.Result? { get }
-  #endif
 }
 public enum ScanningResult<T, U> : BlinkCardUX.ScanningResultProtocol where T : Swift.Sendable, U : Swift.Sendable {
   public typealias Result = T
@@ -234,11 +242,9 @@ public enum ScanningResult<T, U> : BlinkCardUX.ScanningResultProtocol where T : 
   case interrupted(U)
   case cancelled
   case ended
-  #if compiler(>=5.3) && $NonescapableTypes
   nonisolated public var scanResult: T? {
     get
   }
-  #endif
 }
 public protocol EventStream<Event> : Swift.Sendable {
   associatedtype Event : Swift.Sendable
@@ -253,29 +259,13 @@ public protocol CameraFrameAnalyzer<Frame, Event> : Swift.Sendable {
   func pause() async
   func resume() async
   func restart() async throws
+  func resetStepTimer() async
   func end() async
   func result() async -> Self.Result
   var events: any BlinkCardUX.EventStream<Self.Event> { get }
   var stepTimeoutDuration: Foundation.TimeInterval { get async }
+  var inactivityTimeoutDuration: Foundation.TimeInterval { get async }
   var sessionNumber: Swift.Int { get }
-}
-public enum PassportOrientation : Swift.Sendable, Swift.Equatable {
-  case none
-  case left90
-  case right90
-  public static func == (a: BlinkCardUX.PassportOrientation, b: BlinkCardUX.PassportOrientation) -> Swift.Bool
-  public func hash(into hasher: inout Swift.Hasher)
-  public var hashValue: Swift.Int {
-    get
-  }
-}
-public enum DocumentSide : Swift.Sendable, Swift.Equatable {
-  case front
-  case back
-  case barcode
-  case passport(BlinkCardUX.PassportOrientation)
-  case passportBarcode
-  public static func == (a: BlinkCardUX.DocumentSide, b: BlinkCardUX.DocumentSide) -> Swift.Bool
 }
 @_Concurrency.MainActor final public class Camera : BlinkCardUX.CameraModel {
   public enum CameraPosition : Swift.Equatable {
@@ -291,7 +281,7 @@ public enum DocumentSide : Swift.Sendable, Swift.Equatable {
     get
     set
   }
-  @Combine.Published @_projectedValueProperty($status) @_Concurrency.MainActor final public var status: BlinkCardUX.CameraStatus {
+  @Combine.Published<BlinkCardUX.CameraStatus> @_projectedValueProperty($status) @_Concurrency.MainActor final public var status: BlinkCardUX.CameraStatus {
     get
   }
   @_Concurrency.MainActor final public var $status: Combine.Published<BlinkCardUX.CameraStatus>.Publisher {
@@ -334,7 +324,6 @@ public enum DocumentSide : Swift.Sendable, Swift.Equatable {
 }
 @_hasMissingDesignatedInitializers public actor CaptureService {
   @objc deinit
-  @available(iOS 13.0, tvOS 13.0, watchOS 6.0, macOS 10.15, *)
   @_semantics("defaultActor") nonisolated final public var unownedExecutor: _Concurrency.UnownedSerialExecutor {
     get
   }
@@ -346,9 +335,7 @@ public enum DocumentSide : Swift.Sendable, Swift.Equatable {
   @_Concurrency.MainActor func start() async
   @_Concurrency.MainActor func stop() async
   @_Concurrency.MainActor func focusAndExpose(at point: CoreFoundation.CGPoint) async
-  #if compiler(>=5.3) && $NonescapableTypes
   @_Concurrency.MainActor var error: (any Swift.Error)? { get }
-  #endif
   @_Concurrency.MainActor var isTorchSupported: Swift.Bool { get }
   @_Concurrency.MainActor var isTorchEnabled: Swift.Bool { get set }
   @_Concurrency.MainActor var orientation: AVFoundation.AVCaptureVideoOrientation { get }
@@ -372,9 +359,7 @@ public enum CaptureMode : Swift.String, Swift.Identifiable, Swift.CaseIterable {
     get
   }
   case video
-  #if compiler(>=5.3) && $NonescapableTypes
   public init?(rawValue: Swift.String)
-  #endif
   public typealias AllCases = [BlinkCardUX.CaptureMode]
   public typealias ID = BlinkCardUX.CaptureMode
   public typealias RawValue = Swift.String
@@ -427,16 +412,16 @@ public protocol PreviewTarget {
   public typealias Body = @_opaqueReturnTypeOf("$s11BlinkCardUX10CameraViewV4bodyQrvp", 0) __<Camera>
 }
 @_Concurrency.MainActor public class NetworkMonitor : Combine.ObservableObject {
-  @Combine.Published @_projectedValueProperty($isConnected) @_Concurrency.MainActor public var isConnected: Swift.Bool {
+  @Combine.Published<Swift.Bool> @_projectedValueProperty($isConnected) @_Concurrency.MainActor public var isConnected: Swift.Bool {
     get
-    @available(iOS 13.0, tvOS 13.0, watchOS 6.0, macOS 10.15, *)
+    @available(macOS 10.15, iOS 13.0, tvOS 13.0, watchOS 6.0, *)
     set
-    @available(iOS 13.0, tvOS 13.0, watchOS 6.0, macOS 10.15, *)
+    @available(macOS 10.15, iOS 13.0, tvOS 13.0, watchOS 6.0, *)
     _modify
   }
   @_Concurrency.MainActor public var $isConnected: Combine.Published<Swift.Bool>.Publisher {
     get
-    @available(iOS 14.0, tvOS 14.0, watchOS 7.0, macOS 11.0, *)
+    @available(macOS 11.0, iOS 14.0, tvOS 14.0, watchOS 7.0, *)
     set
   }
   @_Concurrency.MainActor public var isOffline: Swift.Bool {
@@ -460,84 +445,78 @@ public protocol AlertTypeProtocol : Swift.Identifiable {
   var pingletAlertType: BlinkCard.UxEventPinglet.AlertType { get }
 }
 public struct ScanningUXSettings {
-  public init(showIntroductionAlert: Swift.Bool = true, showHelpButton: Swift.Bool = true, preferredCameraPosition: BlinkCardUX.Camera.CameraPosition = .back, allowHapticFeedback: Swift.Bool = true)
+  public var helpTooltipShowDelay: Foundation.TimeInterval
+  public var helpTooltipHideDelay: Foundation.TimeInterval
+  public init(showIntroductionAlert: Swift.Bool = true, showHelpButton: Swift.Bool = true, preferredCameraPosition: BlinkCardUX.Camera.CameraPosition = .back, allowHapticFeedback: Swift.Bool = true, allowScanSound: Swift.Bool = true, helpTooltipShowDelay: Foundation.TimeInterval = 10.0, helpTooltipHideDelay: Foundation.TimeInterval = 5.0)
 }
 @_Concurrency.MainActor public class ScanningViewModel<T, U, V, A> : Foundation.ObservableObject where V : BlinkCardUX.ReticleStateMachineProtocol, A : BlinkCardUX.AlertTypeProtocol {
-  #if compiler(>=5.3) && $NonescapableTypes
-  @Combine.Published @_projectedValueProperty($scanningResult) @_Concurrency.MainActor public var scanningResult: T? {
+  @Combine.Published<T?> @_projectedValueProperty($scanningResult) @_Concurrency.MainActor public var scanningResult: T? {
     get
-    @available(iOS 13.0, tvOS 13.0, watchOS 6.0, macOS 10.15, *)
+    @available(macOS 10.15, iOS 13.0, tvOS 13.0, watchOS 6.0, *)
     set
-    @available(iOS 13.0, tvOS 13.0, watchOS 6.0, macOS 10.15, *)
+    @available(macOS 10.15, iOS 13.0, tvOS 13.0, watchOS 6.0, *)
     _modify
   }
-  #endif
-  #if compiler(>=5.3) && $NonescapableTypes
   @_Concurrency.MainActor public var $scanningResult: Combine.Published<T?>.Publisher {
     get
-    @available(iOS 14.0, tvOS 14.0, watchOS 7.0, macOS 11.0, *)
+    @available(macOS 11.0, iOS 14.0, tvOS 14.0, watchOS 7.0, *)
     set
   }
-  #endif
-  @Combine.Published @_projectedValueProperty($roi) @_Concurrency.MainActor public var roi: BlinkCard.RegionOfInterest {
+  @Combine.Published<BlinkCard.RegionOfInterest> @_projectedValueProperty($roi) @_Concurrency.MainActor public var roi: BlinkCard.RegionOfInterest {
     get
-    @available(iOS 13.0, tvOS 13.0, watchOS 6.0, macOS 10.15, *)
+    @available(macOS 10.15, iOS 13.0, tvOS 13.0, watchOS 6.0, *)
     set
-    @available(iOS 13.0, tvOS 13.0, watchOS 6.0, macOS 10.15, *)
+    @available(macOS 10.15, iOS 13.0, tvOS 13.0, watchOS 6.0, *)
     _modify
   }
   @_Concurrency.MainActor public var $roi: Combine.Published<BlinkCard.RegionOfInterest>.Publisher {
     get
-    @available(iOS 14.0, tvOS 14.0, watchOS 7.0, macOS 11.0, *)
+    @available(macOS 11.0, iOS 14.0, tvOS 14.0, watchOS 7.0, *)
     set
   }
   @_Concurrency.MainActor final public let reticleStateMachine: V
-  @Combine.Published @_projectedValueProperty($isTorchOn) @_Concurrency.MainActor public var isTorchOn: Swift.Bool {
+  @Combine.Published<Swift.Bool> @_projectedValueProperty($isTorchOn) @_Concurrency.MainActor public var isTorchOn: Swift.Bool {
     get
-    @available(iOS 13.0, tvOS 13.0, watchOS 6.0, macOS 10.15, *)
+    @available(macOS 10.15, iOS 13.0, tvOS 13.0, watchOS 6.0, *)
     set
   }
   @_Concurrency.MainActor public var $isTorchOn: Combine.Published<Swift.Bool>.Publisher {
     get
-    @available(iOS 14.0, tvOS 14.0, watchOS 7.0, macOS 11.0, *)
+    @available(macOS 11.0, iOS 14.0, tvOS 14.0, watchOS 7.0, *)
     set
   }
-  @Combine.Published @_projectedValueProperty($isToastVisible) @_Concurrency.MainActor public var isToastVisible: Swift.Bool {
+  @Combine.Published<Swift.Bool> @_projectedValueProperty($isToastVisible) @_Concurrency.MainActor public var isToastVisible: Swift.Bool {
     get
-    @available(iOS 13.0, tvOS 13.0, watchOS 6.0, macOS 10.15, *)
+    @available(macOS 10.15, iOS 13.0, tvOS 13.0, watchOS 6.0, *)
     set
-    @available(iOS 13.0, tvOS 13.0, watchOS 6.0, macOS 10.15, *)
+    @available(macOS 10.15, iOS 13.0, tvOS 13.0, watchOS 6.0, *)
     _modify
   }
   @_Concurrency.MainActor public var $isToastVisible: Combine.Published<Swift.Bool>.Publisher {
     get
-    @available(iOS 14.0, tvOS 14.0, watchOS 7.0, macOS 11.0, *)
+    @available(macOS 11.0, iOS 14.0, tvOS 14.0, watchOS 7.0, *)
     set
   }
-  @Combine.Published @_projectedValueProperty($showIntroductionAlert) @_Concurrency.MainActor public var showIntroductionAlert: Swift.Bool {
+  @Combine.Published<Swift.Bool> @_projectedValueProperty($showIntroductionAlert) @_Concurrency.MainActor public var showIntroductionAlert: Swift.Bool {
     get
-    @available(iOS 13.0, tvOS 13.0, watchOS 6.0, macOS 10.15, *)
+    @available(macOS 10.15, iOS 13.0, tvOS 13.0, watchOS 6.0, *)
     set
   }
   @_Concurrency.MainActor public var $showIntroductionAlert: Combine.Published<Swift.Bool>.Publisher {
     get
-    @available(iOS 14.0, tvOS 14.0, watchOS 7.0, macOS 11.0, *)
+    @available(macOS 11.0, iOS 14.0, tvOS 14.0, watchOS 7.0, *)
     set
   }
-  #if compiler(>=5.3) && $NonescapableTypes
-  @Combine.Published @_projectedValueProperty($alertType) @_Concurrency.MainActor public var alertType: A? {
+  @Combine.Published<A?> @_projectedValueProperty($alertType) @_Concurrency.MainActor public var alertType: A? {
     get
-    @available(iOS 13.0, tvOS 13.0, watchOS 6.0, macOS 10.15, *)
+    @available(macOS 10.15, iOS 13.0, tvOS 13.0, watchOS 6.0, *)
     set
   }
-  #endif
-  #if compiler(>=5.3) && $NonescapableTypes
   @_Concurrency.MainActor public var $alertType: Combine.Published<A?>.Publisher {
     get
-    @available(iOS 14.0, tvOS 14.0, watchOS 7.0, macOS 11.0, *)
+    @available(macOS 11.0, iOS 14.0, tvOS 14.0, watchOS 7.0, *)
     set
   }
-  #endif
   @_Concurrency.MainActor public init(analyzer: any BlinkCardUX.CameraFrameAnalyzer<BlinkCard.CameraFrame, U>, uxSettings: BlinkCardUX.ScanningUXSettings = ScanningUXSettings(), reticleStateMachine: V, firstSideFinishedText: Swift.String, scanFinishedText: Swift.String)
   @objc deinit
   @_Concurrency.MainActor public func processAnalyzerResult() async
@@ -550,6 +529,7 @@ public struct ScanningUXSettings {
   @_Concurrency.MainActor public func pauseScanning()
   @_Concurrency.MainActor public func resumeScanning()
   @_Concurrency.MainActor public func restartScanning()
+  @_Concurrency.MainActor public func resetStepTimer()
   @_Concurrency.MainActor public func finishScan() async
   public typealias ObjectWillChangePublisher = Combine.ObservableObjectPublisher
 }
@@ -588,9 +568,7 @@ public enum MicroblinkColor : Swift.String {
   case background
   case needHelpTooltipBackground
   case toastBackgroundColor
-  #if compiler(>=5.3) && $NonescapableTypes
   public init?(rawValue: Swift.String)
-  #endif
   public typealias RawValue = Swift.String
   public var rawValue: Swift.String {
     get
@@ -607,48 +585,6 @@ public protocol OnboardingStepProtocol : Swift.CaseIterable, Swift.Hashable, Swi
 extension SwiftUICore.Animation {
   public static func easeOutExpo(duration: Foundation.TimeInterval) -> SwiftUICore.Animation
 }
-public enum ReticleState : BlinkCardUX.ReticleStateProtocol {
-  case front
-  case back
-  case barcode
-  case detecting
-  case flip
-  case error(Swift.String)
-  case inactive
-  case passport(Swift.String)
-  case inactiveWithMessage(Swift.String)
-  public static var initialState: BlinkCardUX.ReticleState {
-    get
-  }
-  public static var inactiveState: BlinkCardUX.ReticleState {
-    get
-  }
-  #if compiler(>=5.3) && $NonescapableTypes
-  public var text: Swift.String? {
-    get
-  }
-  #endif
-  public var duration: Swift.Double {
-    get
-  }
-  public var shouldExpire: Swift.Bool {
-    get
-  }
-  public var canBeFallback: Swift.Bool {
-    get
-  }
-  public var isErrorState: Swift.Bool {
-    get
-  }
-  public var reticleStateAppearance: BlinkCardUX.ReticleStateAppearance {
-    get
-  }
-  public static func == (a: BlinkCardUX.ReticleState, b: BlinkCardUX.ReticleState) -> Swift.Bool
-  public func hash(into hasher: inout Swift.Hasher)
-  public var hashValue: Swift.Int {
-    get
-  }
-}
 public enum ReticleStateAppearance {
   case empty
   case detecting
@@ -660,29 +596,6 @@ public enum ReticleStateAppearance {
     get
   }
 }
-public class ReticleStateMachine : BlinkCardUX.ReticleStateMachineProtocol {
-  public typealias ReticleStateType = BlinkCardUX.ReticleState
-  @Combine.Published @_projectedValueProperty($reticleState) public var reticleState: BlinkCardUX.ReticleState {
-    get
-    @available(iOS 13.0, tvOS 13.0, watchOS 6.0, macOS 10.15, *)
-    set
-    @available(iOS 13.0, tvOS 13.0, watchOS 6.0, macOS 10.15, *)
-    _modify
-  }
-  public var $reticleState: Combine.Published<BlinkCardUX.ReticleState>.Publisher {
-    get
-    @available(iOS 14.0, tvOS 14.0, watchOS 7.0, macOS 11.0, *)
-    set
-  }
-  public var fallbackState: BlinkCardUX.ReticleState
-  public var lastReticleStateChange: Foundation.TimeInterval
-  public var eventCounter: [BlinkCardUX.ReticleState : Swift.Int]
-  public var reticleStateIsInterruptible: Swift.Bool
-  public init()
-  public func calculateState(using mostFrequentState: BlinkCardUX.ReticleState) -> BlinkCardUX.ReticleState
-  public typealias ObjectWillChangePublisher = Combine.ObservableObjectPublisher
-  @objc deinit
-}
 public protocol ReticleStateMachineProtocol : Combine.ObservableObject {
   associatedtype ReticleStateType : BlinkCardUX.ReticleStateProtocol
   var reticleState: Self.ReticleStateType { get set }
@@ -692,54 +605,28 @@ public protocol ReticleStateMachineProtocol : Combine.ObservableObject {
   var reticleStateIsInterruptible: Swift.Bool { get set }
   func nextState(state: Self.ReticleStateType, force: Swift.Bool) -> Swift.Bool
   func calculateState(using mostFrequentState: Self.ReticleStateType) -> Self.ReticleStateType
+  func forcedState(state: Self.ReticleStateType)
   func setInitialState()
-  #if compiler(>=5.3) && $NonescapableTypes
   func calculateRemainingTime(stateDuration: Swift.Double?) -> Swift.Double
-  #endif
 }
 extension BlinkCardUX.ReticleStateMachineProtocol {
   public func nextState(state: Self.ReticleStateType, force: Swift.Bool = false) -> Swift.Bool
-  #if compiler(>=5.3) && $NonescapableTypes
   public func calculateRemainingTime(stateDuration: Swift.Double? = nil) -> Swift.Double
-  #endif
-  public func setInitialState()
 }
 public protocol ReticleStateProtocol : Swift.Hashable {
-  #if compiler(>=5.3) && $NonescapableTypes
   var text: Swift.String? { get }
-  #endif
   var duration: Swift.Double { get }
   var shouldExpire: Swift.Bool { get }
   var canBeFallback: Swift.Bool { get }
   var isErrorState: Swift.Bool { get }
-  static var initialState: Self { get }
   static var inactiveState: Self { get }
   var reticleStateAppearance: BlinkCardUX.ReticleStateAppearance { get }
-}
-public enum UIEvent : Swift.Equatable, Swift.Sendable {
-  case requestDocumentSide(side: BlinkCardUX.DocumentSide)
-  case wrongSide
-  case wrongSidePassport(passportOrientation: BlinkCardUX.PassportOrientation)
-  case blur
-  case glare
-  case occlusion
-  case tilt
-  case tooClose
-  case tooFar
-  case tooCloseToEdge
-  case notFullyVisible
-  case tooDark
-  case tooBright
-  case facePhotoNotFullyVisible
-  case wrongSidePassportWithBarcode
-  public static func == (a: BlinkCardUX.UIEvent, b: BlinkCardUX.UIEvent) -> Swift.Bool
 }
 extension BlinkCardUX.BlinkCardScanningAlertType : Swift.Equatable {}
 extension BlinkCardUX.BlinkCardScanningAlertType : Swift.Hashable {}
 extension BlinkCardUX.BlinkCardScanningAlertType : Swift.RawRepresentable {}
 extension BlinkCardUX.BlinkCardUIEvent : Swift.Hashable {}
 extension BlinkCardUX.BlinkCardUXView : Swift.Sendable {}
-extension BlinkCardUX.PassportOrientation : Swift.Hashable {}
 extension BlinkCardUX.Camera : Swift.Sendable {}
 extension BlinkCardUX.Camera.CameraPosition : Swift.Hashable {}
 extension BlinkCardUX.CameraStatus : Swift.Equatable {}

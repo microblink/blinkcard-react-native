@@ -1,408 +1,275 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import {
-  Button,
+  Alert,
+  Image,
+  Pressable,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
   Text,
   View,
-  StyleSheet,
-  ScrollView,
-  Image,
   Platform,
-  SafeAreaView,
+  StatusBar,
 } from "react-native";
-
-import { BlinkCardResultBuilder } from "./BlinkCardResultBuilder";
 import { launchImageLibrary } from "react-native-image-picker";
 import {
-  AnonymizationMode,
-  AnonymizationSettings,
   BlinkCardScanningResult,
   BlinkCardSdkSettings,
-  BlinkCardSessionSettings,
   CameraPosition,
-  CardNumberAnonymizationSettings,
-  CroppedImageSettings,
-  DetectionLevel,
-  ExtractionSettings,
-  LivenessSettings,
+  loadSdk,
+  performDirectApiScan,
   performScan,
-  perfromDirectApiScan,
-  ScanningSettings,
   ScanningUxSettings,
-  StrictnessLevel,
+  unloadSdk,
 } from "@microblink/blinkcard-react-native";
+import { BlinkCardResultBuilder } from "./BlinkCardResultBuilder";
+import { LicenseSettingsPanel } from "./LicenseSettingsPanel";
+import { OptionalScanSettingsPanel } from "./OptionalScanSettingsPanel";
+import { SampleLicenseConfig } from "./SampleLicenseConfig";
+import { ScanningSettingsPanel } from "./ScanningSettingsPanel";
+import { ScanningSettingsConfig } from "./ScanningSettingsConfig";
+import { SdkLifecyclePanel } from "./SdkLifecyclePanel";
+
+const INITIAL_RESULT_HINT =
+  'Press "Scan with camera" to scan with the default BlinkCard UX.\n\n' +
+  'Press "DirectAPI two side scan" or "DirectAPI one side scan" to scan static images.';
 
 export default function App() {
-  const [result, setResult] = useState<string | undefined>(
-    'Press the "Perform scan" button to scan documents with the Default BlinkCard UX experience.\n\nPress the "Direct API MultiSide Scan" button to extract document information from multiple static images.\n\nPress the "Direct API SingleSide Scan" button to extract document information from a single static image.',
-  );
+  const scanConfig = useRef(new ScanningSettingsConfig()).current;
+  const licenseConfig = useRef(new SampleLicenseConfig()).current;
+  const lastInitializedLicenseKey = useRef<string | null>(null);
+  const scanInProgressRef = useRef(false);
+  const [, setConfigVersion] = useState(0);
+  const onConfigChanged = () => setConfigVersion((v) => v + 1);
 
-  const [firstSideImage, setFirstSideImage] = useState<string | undefined>();
-  const [secondSideImage, setSecondSideImage] = useState<string | undefined>();
+  const [result, setResult] = useState<string>(INITIAL_RESULT_HINT);
+  const [firstSideImage, setFirstSideImage] = useState<string>();
+  const [secondSideImage, setSecondSideImage] = useState<string>();
+  const [scanInProgress, setScanInProgress] = useState(false);
+  const [sdkLifecycleInProgress, setSdkLifecycleInProgress] = useState(false);
+  const [deleteCachedResourcesOnUnload, setDeleteCachedResourcesOnUnload] =
+    useState(false);
 
-  const blinkCardLicenseKey = Platform.select({
-    ios: "sRwCABVjb20ubWljcm9ibGluay5zYW1wbGUBbGV5SkRjbVZoZEdWa1QyNGlPakUzTnpJM01USXlNemt3T0Rrc0lrTnlaV0YwWldSR2IzSWlPaUprWkdRd05qWmxaaTAxT0RJekxUUXdNRGd0T1RRNE1DMDFORFU0WWpBeFlUVTJZamdpZlE9PXDZkGGlrcyQx8Ic8eGrb7YuRfJYO1Ez+bOLcQtLyQ3HNMc+htny28u5Etjj3BTk2Q39au9g1hJpJQm0J/utSGiRhQT/rVQFdFKU+vS4eUVr2im0FnMtdCS3EVofbA==",
-    android:
-      "sRwCABVjb20ubWljcm9ibGluay5zYW1wbGUAbGV5SkRjbVZoZEdWa1QyNGlPakUzTnpJM01USXlOamt4T1RNc0lrTnlaV0YwWldSR2IzSWlPaUprWkdRd05qWmxaaTAxT0RJekxUUXdNRGd0T1RRNE1DMDFORFU0WWpBeFlUVTJZamdpZlE9PdXzP6loVm3KEys/pvWnco8AYZHWjNoSnU0owabUT/XVMbU2VhlvbyDzXfCeW+NkZJA3upTcu73cs/WbPzbsVoD6wjbHbYwP0+3f51CLps32C13bg/h9DS+73OYmTw==",
-  });
+  const sdkActionsEnabled = !scanInProgress && !sdkLifecycleInProgress;
 
-  /**
-   * NOTE: if needed, the SDK can be pre-loaded before the scanning session starts.
-   * This will ensure that the SDK is initialized, that the resources have been obtained, and the license verified.
-   * This results in reducing the loading time of the scanning sessions.
-   * To do this, call the loadBlinkCardMethod:
-   * loadSdk(new BlinkCardSdkSettings(licenseKey));
-   *
-   * To unload the SDK, or to be more precise, terminate the BlinkCard SDK and releases all associated resources, call:
-   * await unloadSdk(true);
-   */
+  const buildSdkSettings = () => {
+    const sdkSettings = new BlinkCardSdkSettings({
+      licenseKey: licenseConfig.trimmedActiveLicenseKey,
+    });
+    sdkSettings.downloadResources = true;
+    return sdkSettings;
+  };
 
-  const handlePerformScan = async () => {
+  const buildUxSettings = () =>
+    new ScanningUxSettings({
+      showHelpButton: true,
+      showIntroductionAlert: false,
+      preferredCameraPosition: CameraPosition.Back,
+      allowHapticFeedback: true,
+    });
+
+  const logScanConfiguration = (action: string) => {
+    const sessionSettings = scanConfig.buildSessionSettings();
+    const redaction = scanConfig.toRedactionSettings();
+    console.log(`[BlinkCardSample] ${action}`);
+    console.log(
+      `[BlinkCardSample] license (${licenseConfig.activePlatformName}): ${licenseConfig.activeLicenseKeyLogLabel()}`,
+    );
+    console.log(
+      `[BlinkCardSample] redactionSettingsEnabled: ${scanConfig.redactionSettingsEnabled}`,
+    );
+    console.log(
+      `[BlinkCardSample] redactionSettings: ${redaction != null ? JSON.stringify(redaction) : "null"}`,
+    );
+    console.log(
+      `[BlinkCardSample] full sessionSettings JSON: ${JSON.stringify(sessionSettings)}`,
+    );
+  };
+
+  const showInstructions = (
+    title: string,
+    message: string,
+    onOk: () => void,
+  ) => {
+    Alert.alert(title, message, [{ text: "OK", onPress: onOk }]);
+  };
+
+  const syncSdkForCurrentLicense = async (): Promise<boolean> => {
+    if (!licenseConfig.hasValidActiveLicenseKey) {
+      setResult("License key is required.");
+      resetImages();
+      return false;
+    }
+
+    const licenseKey = licenseConfig.trimmedActiveLicenseKey;
+    if (
+      lastInitializedLicenseKey.current != null &&
+      lastInitializedLicenseKey.current !== licenseKey
+    ) {
+      try {
+        await unloadSdk(false);
+      } catch (error) {
+        console.log(
+          `[BlinkCardSample] unloadSdk before license change: ${error}`,
+        );
+      }
+    }
+
+    lastInitializedLicenseKey.current = licenseKey;
+    return true;
+  };
+
+  const runScan = async (scanAction: () => Promise<void>) => {
+    if (scanInProgressRef.current) {
+      return;
+    }
+    scanInProgressRef.current = true;
+    setScanInProgress(true);
     try {
-      setResult(undefined);
-      resetImages();
-      /**
-       * Set the BlinkCard SDK settings
-       * Add the license key here from the code above
-       */
-      /// Set the BlinkCard SDK settings
-      const sdkSettings = new BlinkCardSdkSettings({
-        licenseKey: blinkCardLicenseKey ?? "",
-      });
-      sdkSettings.downloadResources = true;
-      /**
-       * Create and modify the Session Settings
-       */
-      const sessionSettings = new BlinkCardSessionSettings();
-
-      /**
-       * Create and modify the scanning settings
-       */
-      const scanningSettings = new ScanningSettings();
-      scanningSettings.skipImagesWithBlur = true;
-      scanningSettings.tiltDetectionLevel = DetectionLevel.Mid;
-
-      /**
-       * Create and modify the liveness settings
-       */
-      const livenessSettings = new LivenessSettings();
-      livenessSettings.enableCardHelpInHandCheck = true;
-      livenessSettings.photocopyCheckStrictnessLevel = StrictnessLevel.Level5;
-
-      /**
-       * Create and modify the extraction settings
-       */
-      const extractionSettings = new ExtractionSettings();
-      extractionSettings.extractCardholderName = true;
-      extractionSettings.extractCvv = true;
-      extractionSettings.extractInvalidCardNumber = false;
-
-      /**
-       * Create and modify the anonymization settings
-       */
-      const anonymizationSettings = new AnonymizationSettings();
-      anonymizationSettings.cardholderNameAnonymizationMode =
-        AnonymizationMode.ImageOnly;
-      anonymizationSettings.cvvAnonymizationMode = AnonymizationMode.FullResult;
-      anonymizationSettings.cardNumberAnonymizationSettings =
-        new CardNumberAnonymizationSettings({
-          prefixDigitsVisible: 1,
-          suffixDigitsVisible: 2,
-        });
-
-      /**
-       * Create and modify the cropped image settings
-       */
-      const croppedImageSettings = new CroppedImageSettings();
-      croppedImageSettings.returnCardImage = true;
-
-      /**
-       * Place the above defined settings in the Scanning settings
-       */
-      scanningSettings.extractionSettings = extractionSettings;
-      scanningSettings.livenessSettings = livenessSettings;
-      scanningSettings.anonymizationSettings = anonymizationSettings;
-      scanningSettings.croppedImageSettings = croppedImageSettings;
-
-      /**
-       * Place the Scanning settings in the Session settings
-       */
-      sessionSettings.scanningSettings = scanningSettings;
-
-      /**
-       * Create and modify the UX settings
-       * This paramater is optional
-       */
-      const scanningUxSettings = new ScanningUxSettings();
-      scanningUxSettings.showHelpButton = true;
-      scanningUxSettings.showIntroductionAlert = false;
-      scanningUxSettings.preferredCameraPosition = CameraPosition.Back;
-      scanningUxSettings.allowHapticFeedback = true;
-
-      /**
-       * Call the 'performScan' method and handle the results
-       *
-       * Check how the results are handled in the BlinkCardResultBuilder.ts file
-       */
-      const blinkCardResult = await performScan(
-        sdkSettings,
-        sessionSettings,
-        scanningUxSettings,
-      );
-
-      setResult(BlinkCardResultBuilder.getCardResultString(blinkCardResult));
-      setImages(blinkCardResult);
-    } catch (error) {
-      setResult(`BlinkCard scanning error: ${error}`);
-      resetImages();
+      if (!(await syncSdkForCurrentLicense())) {
+        return;
+      }
+      await scanAction();
+    } finally {
+      scanInProgressRef.current = false;
+      setScanInProgress(false);
     }
   };
 
-  const handlePerformDirectApiMultiSideScan = async () => {
+  const loadSdkManually = async () => {
+    if (!sdkActionsEnabled) {
+      return;
+    }
+    if (!(await syncSdkForCurrentLicense())) {
+      return;
+    }
+    setSdkLifecycleInProgress(true);
     try {
-      setResult(undefined);
-      resetImages();
-      /**
-       * Pick the first image of the document
-       * Make sure it is the front side
-       */
-      const firstImage = await launchImageLibrary({
-        mediaType: "photo",
-        includeBase64: true,
-      });
-
-      if (firstImage.assets == null || !firstImage.assets[0]?.base64) {
-        setResult("First image not selected or invalid.");
-        return;
-      }
-
-      /**
-       * Take the Base64 of the selected image
-       */
-      const firstImageBase64 = firstImage.assets[0].base64;
-
-      /**
-       * Pick the second image of the document
-       * Make sure it is the back side of the document
-       */
-      const secondImage = await launchImageLibrary({
-        mediaType: "photo",
-        includeBase64: true,
-      });
-
-      if (secondImage.assets == null || !secondImage.assets[0]?.base64) {
-        setResult("Second image not selected or invalid.");
-        return;
-      }
-
-      /**
-       * Take the Base64 of the selected image
-       */
-      const secondImageBase64 = secondImage.assets[0].base64;
-
-      /**
-       * Set the BlinkCard SDK settings
-       * Add the license key here from the code above
-       */
-      /// Set the BlinkCard SDK settings
-      const sdkSettings = new BlinkCardSdkSettings({
-        licenseKey: blinkCardLicenseKey ?? "",
-      });
-      sdkSettings.downloadResources = true;
-      /**
-       * Create and modify the Session Settings
-       */
-      const sessionSettings = new BlinkCardSessionSettings();
-
-      /**
-       * Create and modify the scanning settings
-       */
-      const scanningSettings = new ScanningSettings();
-      scanningSettings.skipImagesWithBlur = true;
-      scanningSettings.tiltDetectionLevel = DetectionLevel.Mid;
-
-      /**
-       * Create and modify the liveness settings
-       */
-      const livenessSettings = new LivenessSettings();
-      livenessSettings.enableCardHelpInHandCheck = true;
-      livenessSettings.photocopyCheckStrictnessLevel = StrictnessLevel.Level5;
-
-      /**
-       * Create and modify the extraction settings
-       */
-      const extractionSettings = new ExtractionSettings();
-      extractionSettings.extractCardholderName = true;
-      extractionSettings.extractCvv = true;
-      extractionSettings.extractInvalidCardNumber = false;
-
-      /**
-       * Create and modify the anonymization settings
-       */
-      const anonymizationSettings = new AnonymizationSettings();
-      anonymizationSettings.cardholderNameAnonymizationMode =
-        AnonymizationMode.ImageOnly;
-      anonymizationSettings.cvvAnonymizationMode = AnonymizationMode.FullResult;
-      anonymizationSettings.cardNumberAnonymizationSettings =
-        new CardNumberAnonymizationSettings({
-          prefixDigitsVisible: 1,
-          suffixDigitsVisible: 2,
-        });
-
-      /**
-       * Create and modify the cropped image settings
-       */
-      const croppedImageSettings = new CroppedImageSettings();
-      croppedImageSettings.returnCardImage = true;
-
-      /**
-       * Place the above defined settings in the Scanning settings
-       */
-      scanningSettings.extractionSettings = extractionSettings;
-      scanningSettings.livenessSettings = livenessSettings;
-      scanningSettings.anonymizationSettings = anonymizationSettings;
-      scanningSettings.croppedImageSettings = croppedImageSettings;
-
-      /**
-       * Place the Scanning settings in the Session settings
-       */
-      sessionSettings.scanningSettings = scanningSettings;
-
-      /**
-       * Call the performDirectApiScan method, where the SDK and session settings need to
-       * be passed, along with the Base64 images.
-       */
-      const blinkCardResult = await perfromDirectApiScan(
-        sdkSettings,
-        sessionSettings,
-        firstImageBase64,
-        secondImageBase64,
-      );
-
-      setResult(BlinkCardResultBuilder.getCardResultString(blinkCardResult));
-      setImages(blinkCardResult);
+      await loadSdk(buildSdkSettings());
+      setResult("SDK loaded successfully.");
     } catch (error) {
-      setResult(`BlinkCard DirectAPI error: ${error}`);
-      resetImages();
+      lastInitializedLicenseKey.current = null;
+      setResult(`Load SDK error: ${error}`);
+    } finally {
+      setSdkLifecycleInProgress(false);
     }
   };
 
-  const handlePerformDirectApiSingleSideScan = async () => {
+  const unloadSdkManually = async () => {
+    if (!sdkActionsEnabled) {
+      return;
+    }
+    setSdkLifecycleInProgress(true);
     try {
-      setResult(undefined);
-      resetImages();
-      /**
-       * Pick an image of the document
-       * It can either be the front of the back side of the document
-       */
-      const image = await launchImageLibrary({
-        mediaType: "photo",
-        includeBase64: true,
-      });
-
-      if (image.assets == null || !image.assets[0]?.base64) {
-        setResult("The selected image is not selected or is invalid.");
-        return;
-      }
-
-      /**
-       * Take the Base64 of the selected image
-       */
-      const imageBase64 = image.assets[0].base64;
-
-      /**
-       * Set the BlinkCard SDK settings
-       * Add the license key here from the code above
-       */
-      /// Set the BlinkCard SDK settings
-      const sdkSettings = new BlinkCardSdkSettings({
-        licenseKey: blinkCardLicenseKey ?? "",
-      });
-      sdkSettings.downloadResources = true;
-      /**
-       * Create and modify the Session Settings
-       */
-      const sessionSettings = new BlinkCardSessionSettings();
-
-      /**
-       * Create and modify the scanning settings
-       */
-      const scanningSettings = new ScanningSettings();
-      scanningSettings.skipImagesWithBlur = true;
-      scanningSettings.tiltDetectionLevel = DetectionLevel.Mid;
-
-      /**
-       * Create and modify the liveness settings
-       */
-      const livenessSettings = new LivenessSettings();
-      livenessSettings.enableCardHelpInHandCheck = true;
-      livenessSettings.photocopyCheckStrictnessLevel = StrictnessLevel.Level5;
-
-      /**
-       * Create and modify the extraction settings
-       *
-       * Since all of the information is set to `false`
-       * Only one image is required
-       */
-      const extractionSettings = new ExtractionSettings();
-      extractionSettings.extractCardholderName = false;
-      extractionSettings.extractCvv = false;
-      extractionSettings.extractExpiryDate = false;
-      extractionSettings.extractIban = false;
-      extractionSettings.extractInvalidCardNumber = false;
-
-      /**
-       * Create and modify the anonymization settings
-       */
-      const anonymizationSettings = new AnonymizationSettings();
-      anonymizationSettings.cardholderNameAnonymizationMode =
-        AnonymizationMode.ImageOnly;
-      anonymizationSettings.cvvAnonymizationMode = AnonymizationMode.FullResult;
-      anonymizationSettings.cardNumberAnonymizationSettings =
-        new CardNumberAnonymizationSettings({
-          prefixDigitsVisible: 1,
-          suffixDigitsVisible: 2,
-        });
-
-      /**
-       * Create and modify the cropped image settings
-       */
-      const croppedImageSettings = new CroppedImageSettings();
-      croppedImageSettings.returnCardImage = true;
-
-      /**
-       * Place the above defined settings in the Scanning settings
-       */
-      scanningSettings.extractionSettings = extractionSettings;
-      scanningSettings.livenessSettings = livenessSettings;
-      scanningSettings.anonymizationSettings = anonymizationSettings;
-      scanningSettings.croppedImageSettings = croppedImageSettings;
-
-      /**
-       * Place the Scanning settings in the Session settings
-       */
-      sessionSettings.scanningSettings = scanningSettings;
-
-      /**
-       * Call the performDirectApiScan method, where the SDK and session settings need to
-       * be passed, along with the Base64 images.
-       */
-      const blinkCardResult = await perfromDirectApiScan(
-        sdkSettings,
-        sessionSettings,
-        imageBase64,
+      await unloadSdk(deleteCachedResourcesOnUnload);
+      lastInitializedLicenseKey.current = null;
+      setResult(
+        deleteCachedResourcesOnUnload
+          ? "SDK unloaded (cached resources deleted)."
+          : "SDK unloaded.",
       );
-
-      setResult(BlinkCardResultBuilder.getCardResultString(blinkCardResult));
-      setImages(blinkCardResult);
     } catch (error) {
-      setResult(`SDK error: ${error}`);
-      resetImages();
+      setResult(`Unload SDK error: ${error}`);
+    } finally {
+      setSdkLifecycleInProgress(false);
     }
   };
 
-  function setImages(result: BlinkCardScanningResult | undefined) {
-    setFirstSideImage(result?.firstSideResult?.cardImage?.image);
-    setSecondSideImage(result?.secondSideResult?.cardImage?.image);
+  const handlePerformScan = () =>
+    runScan(async () => {
+      try {
+        setResult("");
+        resetImages();
+        logScanConfiguration("Scan with camera");
+        const blinkCardResult = await performScan(
+          buildSdkSettings(),
+          scanConfig.buildSessionSettings(),
+          buildUxSettings(),
+        );
+        setResult(BlinkCardResultBuilder.getCardResultString(blinkCardResult));
+        setImages(blinkCardResult);
+      } catch (error) {
+        setResult(`BlinkCard scanning error: ${error}`);
+        resetImages();
+      }
+    });
+
+  const handlePerformDirectApiTwoSideScan = () =>
+    runScan(async () => {
+      try {
+        setResult("");
+        resetImages();
+        logScanConfiguration("DirectAPI two sides");
+
+        const pickerResult = await launchImageLibrary({
+          mediaType: "photo",
+          selectionLimit: 2,
+          includeBase64: true,
+        });
+
+        if (pickerResult.didCancel) {
+          return;
+        }
+
+        const assets = pickerResult.assets;
+        if (
+          !assets ||
+          assets.length < 2 ||
+          !assets[0]?.base64 ||
+          !assets[1]?.base64
+        ) {
+          setResult(
+            "Select two images. The first must be the side where the card number is located; the second must be the other side.",
+          );
+          return;
+        }
+
+        const blinkCardResult = await performDirectApiScan(
+          buildSdkSettings(),
+          scanConfig.buildSessionSettings(),
+          assets[0].base64,
+          assets[1].base64,
+        );
+        setResult(BlinkCardResultBuilder.getCardResultString(blinkCardResult));
+        setImages(blinkCardResult);
+      } catch (error) {
+        setResult(`BlinkCard DirectAPI error: ${error}`);
+        resetImages();
+      }
+    });
+
+  const handlePerformDirectApiOneSideScan = () =>
+    runScan(async () => {
+      try {
+        setResult("");
+        resetImages();
+        logScanConfiguration("DirectAPI one side");
+
+        const pickerResult = await launchImageLibrary({
+          mediaType: "photo",
+          includeBase64: true,
+        });
+
+        if (pickerResult.didCancel || !pickerResult.assets?.[0]?.base64) {
+          return;
+        }
+
+        const blinkCardResult = await performDirectApiScan(
+          buildSdkSettings(),
+          scanConfig.buildSessionSettings(),
+          pickerResult.assets[0].base64,
+        );
+        setResult(BlinkCardResultBuilder.getCardResultString(blinkCardResult));
+        setImages(blinkCardResult);
+      } catch (error) {
+        setResult(`BlinkCard DirectAPI error: ${error}`);
+        resetImages();
+      }
+    });
+
+  function setImages(scanResult: BlinkCardScanningResult | undefined) {
+    setFirstSideImage(scanResult?.firstSideResult?.cardImage?.image);
+    setSecondSideImage(scanResult?.secondSideResult?.cardImage?.image);
   }
 
   function resetImages() {
@@ -411,84 +278,115 @@ export default function App() {
   }
 
   return (
-    <View style={styles.container}>
-      <View>
-        <SafeAreaView></SafeAreaView>
-        <View style={styles.spacer} />
-        <Button title="Perform Scan" onPress={handlePerformScan} />
-        <View style={styles.spacer} />
-        <Button
-          title="Direct API MultiSide Scan"
-          onPress={handlePerformDirectApiMultiSideScan}
-        />
-        <View style={styles.spacer} />
-        <Button
-          title="Direct API SingleSide Scan"
-          onPress={handlePerformDirectApiSingleSideScan}
-        />
+    <SafeAreaView style={styles.safeArea}>
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>BlinkCard Sample</Text>
       </View>
-      <ScrollView style={styles.resultBox}>
-        <Text>{result}</Text>
-      </ScrollView>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+      >
+          <LicenseSettingsPanel
+            config={licenseConfig}
+            onChanged={onConfigChanged}
+          />
+          <ScanningSettingsPanel
+            config={scanConfig}
+            onChanged={onConfigChanged}
+          />
+          <OptionalScanSettingsPanel
+            config={scanConfig}
+            onChanged={onConfigChanged}
+          />
+          <SdkLifecyclePanel
+            deleteCachedResourcesOnUnload={deleteCachedResourcesOnUnload}
+            onDeleteCachedResourcesOnUnloadChanged={
+              setDeleteCachedResourcesOnUnload
+            }
+            onLoadSdk={loadSdkManually}
+            onUnloadSdk={unloadSdkManually}
+            actionsEnabled={sdkActionsEnabled}
+          />
 
-      <ScrollView style={styles.imageScroll} horizontal>
-        {firstSideImage && (
-          <DocumentImageContainer
-            label="First side image"
-            imageUri={`data:image/jpeg;base64,${firstSideImage}`}
-          />
-        )}
-        {secondSideImage && (
-          <DocumentImageContainer
-            label="Back Document Image"
-            imageUri={`data:image/jpeg;base64,${secondSideImage}`}
-          />
-        )}
+          <View style={styles.buttonBlock}>
+            <ScanActionButton
+              title="Scan with camera"
+              enabled={sdkActionsEnabled}
+              onPress={handlePerformScan}
+            />
+          </View>
+          <View style={styles.buttonBlock}>
+            <ScanActionButton
+              title="DirectAPI two side scan"
+              enabled={sdkActionsEnabled}
+              onPress={() =>
+                showInstructions(
+                  "DirectAPI TwoSides instructions",
+                  "Select two images for processing.\nThe first selected image needs to be side where the card number is located.\nThe second image needs to be the other side of the card.",
+                  handlePerformDirectApiTwoSideScan,
+                )
+              }
+            />
+          </View>
+          <View style={styles.buttonBlock}>
+            <ScanActionButton
+              title="DirectAPI one side scan"
+              enabled={sdkActionsEnabled}
+              onPress={() =>
+                showInstructions(
+                  "DirectAPI OneSide instructions",
+                  "Select one image for processing.\nThe image needs to be side of the card where the card number is located.",
+                  handlePerformDirectApiOneSideScan,
+                )
+              }
+            />
+          </View>
+
+          <Text style={styles.resultText}>{result}</Text>
+
+          {firstSideImage ? (
+            <DocumentImageContainer
+              label="First card image:"
+              imageUri={`data:image/jpeg;base64,${firstSideImage}`}
+            />
+          ) : null}
+          {secondSideImage ? (
+            <DocumentImageContainer
+              label="Second card image:"
+              imageUri={`data:image/jpeg;base64,${secondSideImage}`}
+            />
+          ) : null}
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 20,
-    justifyContent: "center",
-    backgroundColor: "#fff",
-  },
-  spacer: {
-    height: 25,
-  },
+type ScanActionButtonProps = {
+  title: string;
+  enabled: boolean;
+  onPress: () => void;
+};
 
-  resultBox: {
-    flex: 1,
-    marginTop: 20,
-    backgroundColor: "#f2f2f2",
-    padding: 10,
-    borderRadius: 8,
-    maxHeight: "auto",
-  },
-
-  imageScroll: {
-    marginTop: 20,
-    maxHeight: 300,
-  },
-  imageContainer: {
-    margin: 10,
-    marginTop: 20,
-    alignItems: "center",
-  },
-  imageLabel: {
-    fontSize: 16,
-    marginBottom: 10,
-  },
-  image: {
-    width: 200,
-    height: 200,
-    borderRadius: 8,
-    backgroundColor: "#eee",
-  },
-});
+function ScanActionButton({ title, enabled, onPress }: ScanActionButtonProps) {
+  return (
+    <Pressable
+      style={[styles.actionButton, !enabled && styles.actionButtonDisabled]}
+      onPress={enabled ? onPress : undefined}
+      disabled={!enabled}
+    >
+      <Text
+        style={[
+          styles.actionButtonText,
+          !enabled && styles.actionButtonTextDisabled,
+        ]}
+      >
+        {title}
+      </Text>
+    </Pressable>
+  );
+}
 
 type DocumentImageContainerProps = {
   label: string;
@@ -498,15 +396,56 @@ type DocumentImageContainerProps = {
 const DocumentImageContainer: React.FC<DocumentImageContainerProps> = ({
   label,
   imageUri,
-}) => {
-  return (
-    <View style={styles.imageContainer}>
-      <Text style={styles.imageLabel}>{label}</Text>
-      <Image
-        source={{ uri: imageUri }}
-        style={styles.image}
-        resizeMode="contain"
-      />
-    </View>
-  );
-};
+}) => (
+  <View style={styles.imageBlock}>
+    <Text style={styles.imageLabel}>{label}</Text>
+    <Image
+      source={{ uri: imageUri }}
+      style={styles.image}
+      resizeMode="contain"
+    />
+  </View>
+);
+
+const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: "#1565C0",
+    paddingTop: Platform.OS === "android" ? StatusBar.currentHeight : 0
+  },
+  header: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "#ddd",
+    backgroundColor: "#1565C0",
+  },
+  headerTitle: { fontSize: 18, fontWeight: "600", color: "#fff" },
+  scroll: { flex: 1, backgroundColor: '#fff' },
+  scrollContent: { padding: 16, paddingBottom: 32 },
+  buttonBlock: { marginBottom: 16 },
+  actionButton: {
+    backgroundColor: "#1565C0",
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  actionButtonDisabled: {
+    backgroundColor: "#90A4AE",
+  },
+  actionButtonText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#fff",
+  },
+  actionButtonTextDisabled: { color: "#fff", opacity: 0.85 },
+  resultText: { fontSize: 14, lineHeight: 20, marginBottom: 16 },
+  imageBlock: { alignItems: "center", marginBottom: 16 },
+  imageLabel: { fontSize: 14, marginBottom: 8 },
+  image: {
+    width: 350,
+    height: 180,
+    borderRadius: 8,
+    backgroundColor: "#eee",
+  },
+});

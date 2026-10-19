@@ -1,9 +1,9 @@
 buildscript {
   ext.BlinkCardReactNative = [
-    kotlinVersion: "2.1.0",
+    kotlinVersion: "2.2.21",
     minSdkVersion: 24,
-    compileSdkVersion: 35,
-    targetSdkVersion: 35
+    compileSdkVersion: 36,
+    targetSdkVersion: 36
   ]
 
   ext.getExtOrDefault = { prop ->
@@ -64,7 +64,7 @@ android {
 
 dependencies {
   implementation "com.facebook.react:react-android"
-  implementation("com.microblink:blinkcard-ux:3000.0.1")
+  implementation("com.microblink:blinkcard-ux:3001.0.0")
 }
 
 react {

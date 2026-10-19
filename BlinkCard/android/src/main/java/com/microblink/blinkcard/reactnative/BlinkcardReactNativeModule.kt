@@ -90,8 +90,15 @@ class BlinkCardReactNativeModule(
               sdkSettings = BlinkCardDeserializationUtils.deserializeBlinkCardSdkSettings(blinkCardSdkSettings),
               scanningSessionSettings = BlinkCardDeserializationUtils.deserializeBlinkCardSessionSettings(blinkCardSessionSettings),
               uxSettings = BlinkCardDeserializationUtils.deserializeScanningUxSettings(
-                stepTimeoutDuration = (blinkCardSessionSettingsJson?.optInt("stepTimeTimeoutInterval")  ?: 15000).milliseconds,
-                allowHapticFeedback = scanningUxSettingsJson?.optBoolean("allowHapticFeedback") ?: true),
+                stepTimeoutDuration = BlinkCardDeserializationUtils.durationFromTimeoutMillis(
+                  blinkCardSessionSettingsJson?.optInt("stepTimeTimeoutInterval", 60000) ?: 60000,
+                ),
+                inactivityTimeoutDuration = BlinkCardDeserializationUtils.durationFromTimeoutMillis(
+                  blinkCardSessionSettingsJson?.optInt("inactivityTimeoutInterval", 10000) ?: 10000,
+                ),
+                allowHapticFeedback = scanningUxSettingsJson?.optBoolean("allowHapticFeedback", true) ?: true,
+                allowScanSound = scanningUxSettingsJson?.optBoolean("allowScanSound", true) ?: true,
+              ),
               cameraSettings = BlinkCardDeserializationUtils.deserializeCameraSettings(scanningUxSettingsJson?.get("preferredCameraPosition") as? String ?: "front"),
               showOnboardingDialog = scanningUxSettingsJson?.get("showIntroductionAlert") as? Boolean ?: true,
               showHelpButton = scanningUxSettingsJson?.get("showHelpButton") as? Boolean ?: true,

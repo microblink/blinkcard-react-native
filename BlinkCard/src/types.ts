@@ -4,7 +4,7 @@
  * This enum is used to configure detection thresholds and enable or disable detection functionality.
  * The levels range from turning detection off completely to setting various levels of sensitivity (Low, Mid, High).
  */
-export enum DetectionLevel {
+export enum SensitivityLevel {
   Off = 'off',
   Low = 'low',
   Mid = 'mid',
@@ -37,15 +37,15 @@ export enum StrictnessLevel {
 }
 
 /**
- * Represents level of anonymization performed on the scanning result.
+ * Represents level of redaction performed on the scanning result.
  */
-export enum AnonymizationMode {
+export enum RedactionMode {
   /**
-   * Anonymization will not be performed.
+   * Redaction will not be performed.
    */
   None = 'none',
   /**
-   * Full document image is anonymized with black boxes covering sensitive data.
+   * Full document image is redacted with black boxes covering sensitive data.
    */
   ImageOnly = 'imageOnly',
   /**
@@ -62,7 +62,7 @@ export enum AnonymizationMode {
  * Result of a single check performed during the document verification process.
  */
 export enum CheckResult {
-  NotPerformed = 'notPerformed',
+  NotAvailable = 'notAvailable',
   Pass = 'pass',
   Fail = 'fail',
 }
@@ -82,40 +82,40 @@ export enum CameraPosition {
 }
 
 /**
- * Holds the settings which control card number anonymization.
+ * Holds the settings which control card number redaction.
  */
-export class CardNumberAnonymizationSettings {
+export class CardNumberRedactionSettings {
   /**
-   * Defines the mode of card number anonymization.
+   * Defines the mode of card number redaction.
    *
-   * Default: [AnonymizationMode.none]
+   * Default: [RedactionMode.fullResult]
    */
-  anonymizationMode: AnonymizationMode;
+  mode: RedactionMode;
   /**
    * Defines how many digits at the beginning
-   * of the card number remain visible after anonymization.
+   * of the card number remain visible after redaction.
    *
-   * Default: `0`
+   * Default: `4`
    */
   prefixDigitsVisible: number;
   /**
    * Defines how many digits at the end
-   * of the card number remain visible after anonymization.
+   * of the card number remain visible after redaction.
    *
-   * Default: `0`
+   * Default: `4`
    */
   suffixDigitsVisible: number;
 
   constructor({
-    anonymizationMode = AnonymizationMode.None,
-    prefixDigitsVisible = 0,
-    suffixDigitsVisible = 0,
+    mode = RedactionMode.FullResult,
+    prefixDigitsVisible = 4,
+    suffixDigitsVisible = 4,
   }: {
-    anonymizationMode?: AnonymizationMode;
+    mode?: RedactionMode;
     prefixDigitsVisible?: number;
     suffixDigitsVisible?: number;
   } = {}) {
-    this.anonymizationMode = anonymizationMode;
+    this.mode = mode;
     this.prefixDigitsVisible = prefixDigitsVisible;
     this.suffixDigitsVisible = suffixDigitsVisible;
   }
@@ -178,6 +178,11 @@ export class CardAccountResult {
    */
   issuerCountry?: string;
 
+  /**
+   * Result of the BIN (Bank Identification Number) check for this account.
+   */
+  binCheckResult: CheckResult;
+
   constructor(nativeCardAccountResult: any) {
     this.cardNumber = nativeCardAccountResult.cardNumber;
     this.cardNumberValid = nativeCardAccountResult.cardNumberValid;
@@ -189,6 +194,7 @@ export class CardAccountResult {
     this.issuerName = nativeCardAccountResult.issuerName;
     this.issuerCountryCode = nativeCardAccountResult.issuerCountryCode;
     this.issuerCountry = nativeCardAccountResult.issuerCountry;
+    this.binCheckResult = nativeCardAccountResult.binCheckResult;
   }
 }
 
