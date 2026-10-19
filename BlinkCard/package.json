@@ -1,6 +1,6 @@
 {
   "name": "@microblink/blinkcard-react-native",
-  "version": "3000.0.0",
+  "version": "3001.0.0",
   "description": "React Native module for BlinkCard, SDK for scanning and OCR of credit or payment cards.",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",

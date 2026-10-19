@@ -61,6 +61,10 @@ export class BlinkCardResultBuilder {
         );
         cardAccountString += this.buildStringResult("CVV", result.cvv);
         cardAccountString += this.buildStringResult(
+          "BIN check result",
+          result.binCheckResult,
+        );
+        cardAccountString += this.buildStringResult(
           "Issuer name",
           result.issuerName,
         );

@@ -10,6 +10,8 @@ The BlinkCard SDK is a comprehensive solution for implementing secure card scann
 
 However, since the wrapper is open source, you can add the features you need on your own.
 
+**Current release:** [3001.0.0](Release%20notes.md) (native Android & iOS SDK 3001.0.0). Upgrading from 3000.x? See [Release notes](Release%20notes.md#300100).
+
 # Table of contents
 - [Licensing](#licensing)
 - [Requirements](#requirements)
@@ -42,6 +44,10 @@ A valid license key is required to initialize the BlinkCard plugin. A free trial
 The BlinkCard React Native plugin requires:
 - iOS version 16.0 and above
 - Android API version 24 and above
+
+**Android host application (SDK 3001):**
+- `compileSdk` **36** and Android Gradle Plugin **8.9.1** or newer
+- Kotlin **2.1** or newer to compile against the plugin (the plugin library is built with Kotlin 2.2.21)
 
 - For more detailed information about the BlinkCard Android and iOS requirements, view the native SDK documentation here ([Android](https://github.com/microblink/blinkcard-android?tab=readme-ov-file#-device-requirements) & [iOS](https://github.com/microblink/blinkcard-ios?tab=readme-ov-file#requirements)).
 
@@ -220,13 +226,13 @@ import {
        */
       const scanningSettings = new ScanningSettings();
       scanningSettings.skipImagesWithBlur = true;
-      scanningSettings.tiltDetectionLevel = DetectionLevel.Mid;
+      scanningSettings.tiltSensitivityLevel = SensitivityLevel.Mid;
 
       /**
        * Create and modify the liveness settings
        */
       const livenessSettings = new LivenessSettings();
-      livenessSettings.enableCardHelpInHandCheck = true;
+      livenessSettings.enableCardHeldInHandCheck = true;
       livenessSettings.photocopyCheckStrictnessLevel = StrictnessLevel.Level5;
 
       /**
@@ -238,16 +244,16 @@ import {
       extractionSettings.extractInvalidCardNumber = false;
 
       /**
-       * Create and modify the anonymization settings
+       * Optional: redaction settings. If omitted, native SDK 3001 redaction defaults apply
+       * (PAN/CVV redacted; four prefix and four suffix digits visible on the card number).
        */
-      const anonymizationSettings = new AnonymizationSettings();
-      anonymizationSettings.cardholderNameAnonymizationMode =
-        AnonymizationMode.ImageOnly;
-      anonymizationSettings.cvvAnonymizationMode = AnonymizationMode.FullResult;
-      anonymizationSettings.cardNumberAnonymizationSettings =
-        new CardNumberAnonymizationSettings({
-          prefixDigitsVisible: 1,
-          suffixDigitsVisible: 2,
+      const redactionSettings = new RedactionSettings();
+      redactionSettings.cardholderNameRedactionMode = RedactionMode.None;
+      redactionSettings.cvvRedactionMode = RedactionMode.FullResult;
+      redactionSettings.cardNumberRedactionSettings =
+        new CardNumberRedactionSettings({
+          prefixDigitsVisible: 4,
+          suffixDigitsVisible: 4,
         });
 
       /**
@@ -261,7 +267,7 @@ import {
        */
       scanningSettings.extractionSettings = extractionSettings;
       scanningSettings.livenessSettings = livenessSettings;
-      scanningSettings.anonymizationSettings = anonymizationSettings;
+      scanningSettings.redactionSettings = redactionSettings;
       scanningSettings.croppedImageSettings = croppedImageSettings;
 
       /**
@@ -278,6 +284,11 @@ import {
       scanningUxSettings.showIntroductionAlert = false;
       scanningUxSettings.preferredCameraPosition = CameraPosition.Back;
       scanningUxSettings.allowHapticFeedback = true;
+      scanningUxSettings.allowScanSound = true;
+
+      // Session timeouts (milliseconds). Defaults: step 60000 (60s), inactivity 10000 (10s); 0 disables inactivity.
+      // sessionSettings.stepTimeTimeoutInterval = 60000;
+      // sessionSettings.inactivityTimeoutInterval = 10000;
 ```
 
 4. Call the appropriate scanning method (with the default UX, or DirectAPI for static images), handle the results and catch any errors:
@@ -369,31 +380,31 @@ The BlinkCard SDK contains various settings, modifying different parts of scanni
 - Scanning settings
 - Liveness settings
 - Extraction settings
-- Anonymization settings
+- Redaction settings
 - Cropped image settings
 - Scanning UX settings
 
 1. [BlinkCard SDK settings](https://github.com/microblink/blinkcard-react-native/blob/main/BlinkCard/src/blinkCardSettings.ts#L12) - `BlinkCardSdkSettings` \
-These settings are used for the initialization of the BlinkCard SDK. It contains settings for the license key, and how the models (that the SDK needs for the scanning process) should be obtained.
+These settings are used for the initialization of the BlinkCard SDK. It contains settings for the license key, and how the models (that the SDK needs for the scanning process) should be obtained. Optional `resourceRequestTimeout` (milliseconds) controls resource download timeouts on both platforms (native default 30 seconds in SDK 3001).
 
-2. [BlinkCard Session settings](https://github.com/microblink/blinkcard-react-native/blob/main/BlinkCard/src/blinkCardSettings.ts#L95) - `BlinkCardSessionSettings`\
+2. [BlinkCard Session settings](https://github.com/microblink/blinkcard-react-native/blob/main/BlinkCard/src/blinkCardSettings.ts#L96) - `BlinkCardSessionSettings`\
 These settings represent the configuration settings for a scanning session.\
-The class that contains specific scanning configurations that define how the scanning session should behave.
+The class that contains specific scanning configurations that define how the scanning session should behave, including `stepTimeTimeoutInterval` (milliseconds, default 60 seconds; negative values do not disable the step timeout) and `inactivityTimeoutInterval` (milliseconds, default 10 seconds; `0` disables inactivity timeout).
 
-3. [Scanning settings](https://github.com/microblink/blinkcard-react-native/blob/main/BlinkCard/src/blinkCardSettings.ts#L129) - `ScanningSettings`\
+3. [Scanning settings](https://github.com/microblink/blinkcard-react-native/blob/main/BlinkCard/src/blinkCardSettings.ts#L141) - `ScanningSettings`\
 These settings represent the configurable settings for scanning a card.\
-This class defines various parameters and policies related to the scanning process, including image quality handling, data extraction, anonymization, and liveness detection, along with options for frame processing and image extraction.
+This class defines various parameters and policies related to the scanning process, including image quality handling, data extraction, redaction, and liveness detection, along with options for frame processing and image extraction.
 
-4. [Liveness settings](https://github.com/microblink/blinkcard-react-native/blob/main/BlinkCard/src/blinkCardSettings.ts#L227) - `LivenessSettings`\
+4. [Liveness settings](https://github.com/microblink/blinkcard-react-native/blob/main/BlinkCard/src/blinkCardSettings.ts#L239) - `LivenessSettings`\
 Settings for liveness detection during card scanning.\
 This class defines various parameters that control the behavior of liveness detection, including thresholds for hand detection, screen and photocopy analysis, and options to skip processing certain frames based on liveness criteria.
 
-5. [Extraction settings](https://github.com/microblink/blinkcard-react-native/blob/main/BlinkCard/src/blinkCardSettings.ts#L304) - `ExtractionSettings`\
+5. [Extraction settings](https://github.com/microblink/blinkcard-react-native/blob/main/BlinkCard/src/blinkCardSettings.ts#L316) - `ExtractionSettings`\
 Settings that control which fields and images should be extracted from the payment card.\
 Disabling extraction of unused fields can improve recognition performance or reduce memory usage.
 
-6. [Anonymization settings](https://github.com/microblink/blinkcard-react-native/blob/main/BlinkCard/src/blinkCardSettings.ts#L374) - `AnonymizationSettings`\
-Holds the settings which control the anonymization of returned data.
+6. [Redaction settings](https://github.com/microblink/blinkcard-react-native/blob/main/BlinkCard/src/blinkCardSettings.ts#L389) - `RedactionSettings`\
+Optional on `ScanningSettings`. When omitted, native SDK redaction defaults apply. Assign explicitly to override (for example `RedactionMode.None` for unredacted fields).
 
 7. [Cropped image settings](https://github.com/microblink/blinkcard-react-native/blob/main/BlinkCard/src/blinkCardSettings.ts#L433) - `CroppedImageSettings`\
 These settings represent the image cropping settings.\
@@ -401,7 +412,7 @@ This class controls how card images are cropped, including the resolution, exten
 
 8. [Scanning UX settings](https://github.com/microblink/blinkcard-react-native/blob/main/BlinkCard/src/blinkCardSettings.ts#L475) - `ScanningUxSettings`\
 These settings allow customization of various aspects of the UI/UX.
-Displaying certain UI elements, haptic feedback, along with choosing the preffered camera position used when capturing document can modified.
+Displaying certain UI elements, haptic feedback, scan sounds, along with choosing the preffered camera position used when capturing document can modified.
 
 **Additional notes:**
 
@@ -420,7 +431,7 @@ Payment card's issuing network.
 
 2. **Card account result** - `CardAccountResult[]`\
 Payment card accounts found on the card.\
-A list of payment card accounts found on the card. Each result in the list represents a distinct payment account containing details like the card number, CVV, and expiry date.
+A list of payment card accounts found on the card. Each result in the list represents a distinct payment account containing details like the card number, CVV, expiry date, and `binCheckResult` (`pass`, `fail`, or `notAvailable` when BIN check runs).
 
 3. **IBAN** - `string?`\
 The IBAN (International Bank Account Number) of the card, or null if not available.
@@ -431,8 +442,9 @@ Information about the cardholder name, or null if not available.
 5. **Overall card liveness result** - `CheckResult`\
 The overall liveness check result for the card.\
 This result aggregates the outcomes of various liveness checks performed on the card to determine its authenticity
-- Set to `Pass` if all individual checks have passed.
-- Set to `Fail` if any individual check has failed.
+- `pass` if all individual checks have passed.
+- `fail` if any individual check has failed.
+- `notAvailable` when a check was not run (SDK 3001; replaces the former `notPerformed` value).
 
 **Additional notes:**
 

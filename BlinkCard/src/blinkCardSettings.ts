@@ -1,8 +1,8 @@
 import {
-  AnonymizationMode,
+  RedactionMode,
   CameraPosition,
-  CardNumberAnonymizationSettings,
-  DetectionLevel,
+  CardNumberRedactionSettings,
+  SensitivityLevel,
   StrictnessLevel,
 } from "./types";
 
@@ -43,7 +43,8 @@ export class BlinkCardSdkSettings {
    */
   bundleIdentifier?: string;
   /**
-   * Timeout settings for resource downloads.
+   * Resource download timeout in milliseconds
+   * When omitted, the native SDK default applies (30 seconds).
    */
   resourceRequestTimeout?: number;
   /**
@@ -100,22 +101,33 @@ export class BlinkCardSessionSettings {
   scanningSettings: ScanningSettings;
 
   /**
-   * Duration in seconds before scanning step times out and is cancelled.
+   * Duration in milliseconds before a scanning step times out and is cancelled.
    *
-   * If less than zero, scanning will not time out.
-   * Default: to `15000` (15 seconds)
+   * Passed through to the native SDK. Negative values do not disable the step timeout.
+   * Default: `60000` (60 seconds).
    */
   stepTimeTimeoutInterval: number;
 
+  /**
+   * Duration in milliseconds with no scanning progress before an inactivity timeout.
+   *
+   * Set to `0` to disable the inactivity timeout.
+   * Default: `10000` (10 seconds).
+   */
+  inactivityTimeoutInterval: number;
+
   constructor({
     scanningSettings = new ScanningSettings(),
-    stepTimeTimeoutInterval = 15000,
+    stepTimeTimeoutInterval = 60000,
+    inactivityTimeoutInterval = 10000,
   }: {
     scanningSettings?: ScanningSettings;
     stepTimeTimeoutInterval?: number;
+    inactivityTimeoutInterval?: number;
   } = {}) {
     this.scanningSettings = scanningSettings;
     this.stepTimeTimeoutInterval = stepTimeTimeoutInterval;
+    this.inactivityTimeoutInterval = inactivityTimeoutInterval;
   }
 }
 
@@ -123,7 +135,7 @@ export class BlinkCardSessionSettings {
  * Represents the configurable settings for scanning a card.
  *
  * This class defines various parameters and policies related to the scanning process,
- * including image quality handling, data extraction, anonymization, and liveness detection,
+ * including image quality handling, data extraction, redaction, and liveness detection,
  * along with options for frame processing and image extraction.
  */
 export class ScanningSettings {
@@ -140,13 +152,13 @@ export class ScanningSettings {
   /**
    * The level of allowed detected tilt of the card in the image.
    *
-   * Defines the severity of allowed detected tilt of the card in the image, as defined in {@link DetectionLevel}.
+   * Defines the severity of allowed detected tilt of the card in the image, as defined in {@link SensitivityLevel}.
    *
    * Values range from `off` (detection turned off) to higher levels of allowed tilt.
    *
-   * Defaults to `DetectionLevel.mid`.
+   * Defaults to `SensitivityLevel.mid`.
    */
-  tiltDetectionLevel: DetectionLevel;
+  tiltSensitivityLevel: SensitivityLevel;
 
   /**
    * Defines the minimum required margin (in percentage) between the edge of the input image and the card. Default value is 0.02 (also recommended value).
@@ -165,6 +177,7 @@ export class ScanningSettings {
    */
 
   livenessSettings: LivenessSettings;
+
   /**
    * Controls which fields and images should be extracted from the card.
    *
@@ -181,38 +194,38 @@ export class ScanningSettings {
   croppedImageSettings: CroppedImageSettings;
 
   /**
-   * Represents the configurable settings for data anonymization.
+   * Redaction settings for sensitive card data.
    *
-   * This defines various parameters and policies related to the anonymization of sensitive data extracted from the payment cards.
-   *
-   * Defaults to no anonymization.
+   * When omitted, the native SDK default redaction policy applies (PAN and CVV
+   * redacted with four prefix and four suffix digits visible on the card number; IBAN and
+   * cardholder name not redacted).
    */
-  anonymizationSettings: AnonymizationSettings;
+  redactionSettings?: RedactionSettings;
 
   constructor({
     skipImagesWithBlur = true,
-    tiltDetectionLevel = DetectionLevel.Mid,
+    tiltSensitivityLevel = SensitivityLevel.Mid,
     inputImageMargin = 0.02,
     livenessSettings = new LivenessSettings(),
     extractionSettings = new ExtractionSettings(),
     croppedImageSettings = new CroppedImageSettings(),
-    anonymizationSettings = new AnonymizationSettings(),
+    redactionSettings,
   }: {
     skipImagesWithBlur?: boolean;
-    tiltDetectionLevel?: DetectionLevel;
+    tiltSensitivityLevel?: SensitivityLevel;
     inputImageMargin?: number;
     livenessSettings?: LivenessSettings;
     extractionSettings?: ExtractionSettings;
     croppedImageSettings?: CroppedImageSettings;
-    anonymizationSettings?: AnonymizationSettings;
+    redactionSettings?: RedactionSettings;
   } = {}) {
     this.skipImagesWithBlur = skipImagesWithBlur;
-    this.tiltDetectionLevel = tiltDetectionLevel;
+    this.tiltSensitivityLevel = tiltSensitivityLevel;
     this.inputImageMargin = inputImageMargin;
     this.livenessSettings = livenessSettings;
     this.extractionSettings = extractionSettings;
     this.croppedImageSettings = croppedImageSettings;
-    this.anonymizationSettings = anonymizationSettings;
+    this.redactionSettings = redactionSettings;
   }
 }
 
@@ -369,59 +382,47 @@ export class ExtractionSettings {
   }
 }
 /**
- * Holds the settings which control the anonymization of returned data.
+ * Holds the settings which control the redaction of returned data.
+ *
+ * Assign to {@link ScanningSettings.redactionSettings} to override native SDK defaults.
+ * Property defaults below apply only when constructing this object explicitly.
  */
-export class AnonymizationSettings {
+export class RedactionSettings {
   /**
-   * Defines the mode of cardholder name anonymization.
-   *
-   * Default: `AnonymizationMode.none`.
+   * Defines the mode of cardholder name redaction.
    */
-  cardholderNameAnonymizationMode: AnonymizationMode;
+  cardholderNameRedactionMode: RedactionMode;
   /**
-   * Defines the mode of card number prefix anonymization.
-   *
-   * Default: `AnonymizationMode.none`.
+   * Defines the mode of CVV redaction.
    */
-  cardNumberPrefixAnonymizationMode: AnonymizationMode;
+  cvvRedactionMode: RedactionMode;
   /**
-   * Defines the mode of CVV anonymization.
-   *
-   * Default: `AnonymizationMode.none`.
+   * Defines the mode of IBAN redaction.
    */
-  cvvAnonymizationMode: AnonymizationMode;
+  ibanRedactionMode: RedactionMode;
   /**
-   * Defines the mode of IBAN anonymization.
-   *
-   * Default: `AnonymizationMode.none`.
+   * Defines the parameters of card number redaction.
    */
-  ibanAnonymizationMode: AnonymizationMode;
-  /**
-   * Defines the parameters of card number anonymization.
-   */
-  cardNumberAnonymizationSettings: CardNumberAnonymizationSettings;
+  cardNumberRedactionSettings: CardNumberRedactionSettings;
 
   /**
-   * Holds the settings which control the anonymization of returned data.
+   * Holds the settings which control the redaction of returned data.
    */
   constructor({
-    cardholderNameAnonymizationMode = AnonymizationMode.None,
-    cardNumberPrefixAnonymizationMode = AnonymizationMode.None,
-    cvvAnonymizationMode = AnonymizationMode.None,
-    ibanAnonymizationMode = AnonymizationMode.None,
-    cardNumberAnonymizationSettings = new CardNumberAnonymizationSettings(),
+    cardholderNameRedactionMode = RedactionMode.None,
+    cvvRedactionMode = RedactionMode.FullResult,
+    ibanRedactionMode = RedactionMode.None,
+    cardNumberRedactionSettings = new CardNumberRedactionSettings(),
   }: {
-    cardholderNameAnonymizationMode?: AnonymizationMode;
-    cardNumberPrefixAnonymizationMode?: AnonymizationMode;
-    cvvAnonymizationMode?: AnonymizationMode;
-    ibanAnonymizationMode?: AnonymizationMode;
-    cardNumberAnonymizationSettings?: CardNumberAnonymizationSettings;
+    cardholderNameRedactionMode?: RedactionMode;
+    cvvRedactionMode?: RedactionMode;
+    ibanRedactionMode?: RedactionMode;
+    cardNumberRedactionSettings?: CardNumberRedactionSettings;
   } = {}) {
-    this.cardholderNameAnonymizationMode = cardholderNameAnonymizationMode;
-    this.cardNumberAnonymizationSettings = cardNumberAnonymizationSettings;
-    this.cvvAnonymizationMode = cvvAnonymizationMode;
-    this.ibanAnonymizationMode = ibanAnonymizationMode;
-    this.cardNumberPrefixAnonymizationMode = cardNumberPrefixAnonymizationMode;
+    this.cardholderNameRedactionMode = cardholderNameRedactionMode;
+    this.cardNumberRedactionSettings = cardNumberRedactionSettings;
+    this.cvvRedactionMode = cvvRedactionMode;
+    this.ibanRedactionMode = ibanRedactionMode;
   }
 }
 /**
@@ -505,6 +506,14 @@ export class ScanningUxSettings {
   allowHapticFeedback: boolean;
 
   /**
+   * When enabled, scan sounds are played during scanning activities.
+   * When disabled, no scan sounds are played.
+   *
+   * Default: `true`
+   */
+  allowScanSound: boolean;
+
+  /**
    * Allows customization of various aspects of the UI/UX
    * used during the scanning process.
    */
@@ -513,15 +522,18 @@ export class ScanningUxSettings {
     showHelpButton = true,
     preferredCameraPosition = CameraPosition.Back,
     allowHapticFeedback = true,
+    allowScanSound = true,
   }: {
     showIntroductionAlert?: boolean;
     showHelpButton?: boolean;
     preferredCameraPosition?: CameraPosition;
     allowHapticFeedback?: boolean;
+    allowScanSound?: boolean;
   } = {}) {
     this.showIntroductionAlert = showIntroductionAlert;
     this.showHelpButton = showHelpButton;
     this.preferredCameraPosition = preferredCameraPosition;
     this.allowHapticFeedback = allowHapticFeedback;
+    this.allowScanSound = allowScanSound;
   }
 }
