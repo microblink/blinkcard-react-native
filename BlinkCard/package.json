@@ -51,7 +51,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/BlinkCard/blinkcard-react-native"
+    "url": "git+https://github.com/microblink/blinkcard-react-native"
   },
   "author": {
     "name": "Microblink (https://microblink.com)",
@@ -59,9 +59,9 @@
   },
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/BlinkCard/blinkcard-react-native/issues"
+    "url": "https://github.com/microblink/blinkcard-react-native/issues"
   },
-  "homepage": "https://github.com/BlinkCard/blinkcard-react-native#readme",
+  "homepage": "https://github.com/microblink/blinkcard-react-native#readme",
   "publishConfig": {
     "registry": "https://registry.npmjs.org/"
   },
